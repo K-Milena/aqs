@@ -56,30 +56,17 @@ extern void initialise_monitor_handles(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
-// Funkcja odczytująca napięcie z MQ-135
-float Read_MQ135_Voltage() {
+uint32_t Read_MQ135() {
+    uint32_t adc_value = 0;
     HAL_ADC_Start(&hadc1);
+
     if (HAL_ADC_PollForConversion(&hadc1, 10) == HAL_OK) {
-        uint32_t adcValue = HAL_ADC_GetValue(&hadc1);
-        return adcValue * (3.3f / 4095.0f);  // Przelicz na napięcie (0–3.3V)
+        adc_value = HAL_ADC_GetValue(&hadc1);
     }
+
     HAL_ADC_Stop(&hadc1);
-    return 0.0f;
+    return adc_value;
 }
-
-// Funkcja obliczająca AQI - R0 zostało już skalibrowane dla czujnika
-
-#define RL_VALUE    10.0f     // w kOhm
-#define VCC         3.3f
-#define A_CONST     116.602f
-#define B_CONST     -2.769f
-
-float Calculate_AQI(float voltage, float R0) {
-    float Rs = (VCC - voltage) / voltage * RL_VALUE;
-    return A_CONST * powf(Rs / R0, B_CONST);
-}
-
 
 
 /* USER CODE END 0 */
@@ -92,6 +79,8 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
+
+    //float R0 = ((3 - V0) / V0) * 10.0;  // Zakładając R_load = 10 kΩ - kalibracja R0
 
   /* USER CODE END 1 */
 
@@ -115,22 +104,25 @@ int main(void)
   MX_GPIO_Init();
   MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
-  printf("Semihosting test\n");
+  // printf("R0 = %.2f \n", R0);
 
-  float R0 = 3.23f;  // Zmierz R0 w czystym powietrzu (kalibracja!)
+  float R0 = 5.08f;
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-      float voltage = Read_MQ135_Voltage();
-      float ppm = Calculate_AQI(voltage, R0);
+      uint32_t mq135_raw = Read_MQ135();
+      float voltage = (mq135_raw * 3.0) / 4095;  // Przelicz na napięcie (3.3 V dla 12-bit ADC)
+      float V0 = 1.99;  // Zmierzona wartość AO w czystym powietrzu - DO KALIBRACJI
 
-      // Wyświetl wyniki przez UART (np. ST-Link Virtual COM Port)
-      printf("Napięcie: %.2f V | AQI: %.2f\r\n", voltage, ppm);
+      float Rs = ((3 - voltage) / voltage) * 10.0;  // R_load = 10 kΩ
+      float gci = 116.602 * pow((Rs / R0), -2.769);;
 
-      HAL_Delay(1000);  // Odczyt co 1 sekundę
+      printf("Napięcie: %.2f V |GCI (Gas Contamination Index): %.2f\r\n", voltage, gci); //wskaźnik jakościowy
+
+      HAL_Delay(1000);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
