@@ -18,6 +18,8 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include <stdbool.h>
+#include <math.h>
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -27,10 +29,38 @@
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 
+// Struktura dla danych z czujnika MQ-135
+typedef struct {
+    float voltage;          // Napięcie analogowe [V]
+    float Rs;               // Rezystancja czujnika [kΩ]
+    float gci;              // Gas Contamination Index (GCI)
+    uint8_t air_quality_level;  // Poziom jakości powietrza (0-3)
+} MQ135_Data;
+
+// Struktura dla stanu systemu
+typedef struct {
+    bool sd_card_active;    // Czy karta SD jest dostępna?
+    bool bluetooth_active;  // Czy Bluetooth jest włączony?
+    bool buzzer_active;     // Czy buzzer jest aktywny?
+    bool battery_low;       // Czy bateria jest na niskim poziomie?
+} System_Status;
+
+// Struktura główna, agregująca wszystkie dane
+typedef struct {
+    MQ135_Data sensor;      // Dane z czujnika
+    System_Status status;   // Status systemu
+    char timestamp[20];     // Znacznik czasu (np. "2024-05-20 14:30:00")
+    uint32_t measurement_id; // Unikalny ID pomiaru
+} AQS_Data;
+
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+// Stałe kalibracyjne
+#define V0_CLEAN_AIR     0.72f   // Napięcie w czystym powietrzu [V]
+#define R_LOAD           10.0f   // Rezystor obciążeniowy [kΩ]
+#define R0               5.08f  // Obliczone R0 5.08 [kΩ]
 
 /* USER CODE END PD */
 
@@ -63,11 +93,49 @@ uint32_t Read_MQ135() {
     if (HAL_ADC_PollForConversion(&hadc1, 10) == HAL_OK) {
         adc_value = HAL_ADC_GetValue(&hadc1);
     }
-
     HAL_ADC_Stop(&hadc1);
     return adc_value;
 }
 
+void update_measurement(MQ135_Data *data) {
+    data->voltage = (Read_MQ135() * 3.3f) / 4095.0f;	// obliczenie napięcia
+    data->Rs = ((3.3f - data->voltage) / data->voltage) * 10.0f;  // R_load = 10 kΩ - zmierzone omomierzem
+    data->gci = 116.602f * powf((data->Rs / R0), -2.769f);
+
+    // Ograniczenie GCI do 20000
+    if (data->gci > 20000) data->gci = 20000;
+
+    // Klasyfikacja jakości powietrza
+    if (data->gci < 100) data->air_quality_level = 0;       // :D
+    else if (data->gci < 500) data->air_quality_level = 1;  // :)
+    else if (data->gci < 2000) data->air_quality_level = 2; // :|
+    else data->air_quality_level = 3;                       // :(
+}
+
+//void save_to_sd(AQS_Data *data) { //FATFS - jeszcze nie zaimplementowane
+//    FIL file;
+//    f_open(&file, "data.csv", FA_WRITE | FA_OPEN_APPEND);
+//
+//    char buffer[128];
+//    snprintf(buffer, sizeof(buffer), "%s,%d,%.2f,%.2f,%d\n",
+//             data->timestamp,
+//             data->measurement_id,
+//             data->sensor.gci,
+//             data->sensor.voltage,
+//             data->sensor.air_quality_level);
+//
+//    f_puts(buffer, &file);
+//    f_close(&file);
+//}
+
+//void send_via_bluetooth(AQS_Data *data) { //jeszcze nie zaimplementowane
+//    char msg[64];
+//    snprintf(msg, sizeof(msg), "GCI:%.2f|CO2:%d|AQ:%d\n",
+//             data->sensor.gci,
+//             data->sensor.co2_ppm,
+//             data->sensor.air_quality_level);
+//    HC05_Send(msg);
+//}
 
 /* USER CODE END 0 */
 
@@ -79,8 +147,6 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-
-    //float R0 = ((3 - V0) / V0) * 10.0;  // Zakładając R_load = 10 kΩ - kalibracja R0
 
   /* USER CODE END 1 */
 
@@ -104,23 +170,20 @@ int main(void)
   MX_GPIO_Init();
   MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
-  // printf("R0 = %.2f \n", R0);
+  // Inicjalizacja struktury
+  MQ135_Data data;
 
-  float R0 = 5.08f;
+//  float R0 = ((3 - V0) / V0) * 10.0;  // Zakładając R_load = 10 kΩ - kalibracja R0
+//  printf("R0 = %.2f \n", R0);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-      uint32_t mq135_raw = Read_MQ135();
-      float voltage = (mq135_raw * 3.0) / 4095;  // Przelicz na napięcie (3.3 V dla 12-bit ADC)
-      float V0 = 1.99;  // Zmierzona wartość AO w czystym powietrzu - DO KALIBRACJI
-
-      float Rs = ((3 - voltage) / voltage) * 10.0;  // R_load = 10 kΩ
-      float gci = 116.602 * pow((Rs / R0), -2.769);;
-
-      printf("Napięcie: %.2f V |GCI (Gas Contamination Index): %.2f\r\n", voltage, gci); //wskaźnik jakościowy
+	  update_measurement(&data);
+	    printf("Napięcie: %.2f V | GCI: %.2f | Poziom: %d\r\n",
+	           data.voltage, data.gci, data.air_quality_level);
 
       HAL_Delay(1000);
     /* USER CODE END WHILE */
