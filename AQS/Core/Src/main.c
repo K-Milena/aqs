@@ -58,9 +58,9 @@ typedef struct {
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 // Stałe kalibracyjne
-#define V0_CLEAN_AIR     0.72f   // Napięcie w czystym powietrzu [V]
-#define R_LOAD           10.0f   // Rezystor obciążeniowy [kΩ]
-#define R0               5.08f  // Obliczone R0 5.08 [kΩ]
+#define V0_CLEAN_AIR     0.65f   // Napięcie w czystym powietrzu [V]
+#define R_LOAD           10.0f   // Rezystor obciążeniowy [kΩ] - niezależne od kalibracji
+#define R0               66.51f  // Obliczone R0 [kΩ]
 
 /* USER CODE END PD */
 
@@ -98,15 +98,15 @@ uint32_t Read_MQ135() {
 }
 
 void update_measurement(MQ135_Data *data) {
-    data->voltage = (Read_MQ135() * 3.3f) / 4095.0f;	// obliczenie napięcia
-    data->Rs = ((3.3f - data->voltage) / data->voltage) * 10.0f;  // R_load = 10 kΩ - zmierzone omomierzem
+    data->voltage = (Read_MQ135() * 2.97f) / 4095.0f;	// obliczenie napięcia 2.97 V VrefADC - voltomierz
+    data->Rs = ((5.0f - data->voltage) / data->voltage) * 10.0f;  // R_load = 10 kΩ - zmierzone omomierzem, 5V - Vcc
     data->gci = 116.602f * powf((data->Rs / R0), -2.769f);
 
-    // Ograniczenie GCI do 20000
+    // ograniczenie GCI do 20000
     if (data->gci > 20000) data->gci = 20000;
 
-    // Klasyfikacja jakości powietrza
-    if (data->gci < 100) data->air_quality_level = 0;       // :D
+    // klasyfikacja jakosci powietrza
+    if (data->gci < 300) data->air_quality_level = 0;       // :D
     else if (data->gci < 500) data->air_quality_level = 1;  // :)
     else if (data->gci < 2000) data->air_quality_level = 2; // :|
     else data->air_quality_level = 3;                       // :(
@@ -170,11 +170,16 @@ int main(void)
   MX_GPIO_Init();
   MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
+
   // Inicjalizacja struktury
   MQ135_Data data;
 
-//  float R0 = ((3 - V0) / V0) * 10.0;  // Zakładając R_load = 10 kΩ - kalibracja R0
-//  printf("R0 = %.2f \n", R0);
+  /* kod do kalibaracji czujnika*/
+//  float V0 = (Read_MQ135() * 2.97f) / 4095.0f; //2.97 V VrefADC - voltomierz
+//  float R0 = ((5.0 - V0) / V0) * 10.0;  // Zakładając R_load = 10 kΩ - kalibracja R0, Vcc = 5V
+//  printf("R0 = %.2f, V0 = %.2f \n", R0, V0);
+
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
