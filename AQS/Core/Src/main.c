@@ -25,6 +25,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "i2c-lcd.h"
 
 /* USER CODE END Includes */
 
@@ -152,6 +153,15 @@ void update_measurement(MQ135_Data *data) {
 //    HC05_Send(msg);
 //}
 
+void I2C_Scan() {
+    printf("Scanning I2C bus...\r\n");
+    for (uint8_t addr = 1; addr < 128; addr++) {
+        if (HAL_I2C_IsDeviceReady(&hi2c1, addr << 1, 1, 10) == HAL_OK) {
+            printf("Found device at 0x%02X\r\n", addr << 1);
+        }
+    }
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -189,6 +199,11 @@ int main(void)
 
   // Inicjalizacja struktury
   MQ135_Data data;
+  // inicjalizacja ekranu
+  lcd_init();
+
+  lcd_send_cmd (0x80|0x00);
+  lcd_send_string("HELLO WORLD");
 
   /* kod do kalibaracji czujnika*/
 //  float V0 = (Read_MQ135() * 2.97f) / 4095.0f; //2.97 V VrefADC - voltomierz
@@ -207,6 +222,8 @@ int main(void)
 	           data.voltage, data.gci, data.air_quality_level);
 
       HAL_Delay(1000);
+
+      I2C_Scan();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
