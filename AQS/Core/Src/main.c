@@ -22,6 +22,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdbool.h>
+#include <stdarg.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -112,10 +113,10 @@ void update_measurement(MQ135_Data *data) {
     if (data->gci > 20000) data->gci = 20000;
 
     // klasyfikacja jakosci powietrza
-    if (data->gci < 500) data->air_quality_level = 0;       // :D
-    else if (data->gci < 1000) data->air_quality_level = 1;  // :)
-    else if (data->gci < 3000) data->air_quality_level = 2; // :|
-    else data->air_quality_level = 3;                       // :(
+    if (data->gci < 500) data->air_quality_level = 0;       // :D Great
+    else if (data->gci < 1000) data->air_quality_level = 1;  // :) Good
+    else if (data->gci < 3000) data->air_quality_level = 2; // :|	Poor
+    else data->air_quality_level = 3;                       // :(	Bad
 /*
  * KLASYFIKACJA
  * PONIATOWA:
@@ -160,6 +161,15 @@ void I2C_Scan() {
             printf("Found device at 0x%02X\r\n", addr << 1);
         }
     }
+}
+
+void lcd_printf(const char *fmt, ...) {
+    char buffer[64]; // zwiększ jeśli masz długie stringi
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buffer, sizeof(buffer), fmt, args);
+    va_end(args);
+    lcd_send_string(buffer);
 }
 
 /* USER CODE END 0 */
@@ -218,12 +228,19 @@ int main(void)
   while (1)
   {
 	  update_measurement(&data);
-	    printf("Napięcie: %.2f V | GCI: %.2f | Poziom: %d\r\n",
-	           data.voltage, data.gci, data.air_quality_level);
+	  lcd_send_cmd (0x80|0x00);
+	  lcd_printf("GCI: %.2f ", data.gci);
+
+	  lcd_send_cmd(0x80 | 0x40);  // linia 2, kol
+	  lcd_printf("Air Quality: %d ", data.air_quality_level);
+
+
 
       HAL_Delay(1000);
-
-      I2C_Scan();
+	  //lcd_send_string("GCI: %.2f ", data.gci);
+//	    printf("Napięcie: %.2f V | GCI: %.2f | Poziom: %d\r\n",
+//	           data.voltage, data.gci, data.air_quality_level);
+      //I2C_Scan();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
