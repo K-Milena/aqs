@@ -88,7 +88,7 @@ static void MX_GPIO_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_I2C1_Init(void);
 /* USER CODE BEGIN PFP */
-extern void initialise_monitor_handles(void);
+//extern void initialise_monitor_handles(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -113,9 +113,9 @@ void update_measurement(MQ135_Data *data) {
     if (data->gci > 20000) data->gci = 20000;
 
     // klasyfikacja jakosci powietrza
-    if (data->gci < 500) data->air_quality_level = 0;       // :D Great
-    else if (data->gci < 1000) data->air_quality_level = 1;  // :) Good
-    else if (data->gci < 3000) data->air_quality_level = 2; // :|	Poor
+    if (data->gci < 700) data->air_quality_level = 0;       // :D Great
+    else if (data->gci < 2000) data->air_quality_level = 1;  // :) Good
+    else if (data->gci < 5000) data->air_quality_level = 2; // :|	Poor
     else data->air_quality_level = 3;                       // :(	Bad
 /*
  * KLASYFIKACJA
@@ -191,7 +191,7 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-  initialise_monitor_handles();
+  // initialise_monitor_handles();
   /* USER CODE END Init */
 
   /* Configure the system clock */
