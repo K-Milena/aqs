@@ -26,7 +26,11 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "i2c-lcd.h"
+#include <stm32f4xx_hal.h>
+#include "stm32f4xx.h"
+
 
 /* USER CODE END Includes */
 
@@ -37,7 +41,7 @@
 typedef struct {
     float voltage;          // Napięcie analogowe [V]
     float Rs;               // Rezystancja czujnika [kΩ]
-    float gci;              // Gas Contamination Index (GCI)
+    float ppm;              // Gas Contamination Index (GCI)
     uint8_t air_quality_level;  // Poziom jakości powietrza (0-3)
 } MQ135_Data;
 
@@ -107,15 +111,15 @@ uint32_t Read_MQ135() {
 void update_measurement(MQ135_Data *data) {
     data->voltage = (Read_MQ135() * 2.97f) / 4095.0f;	// obliczenie napięcia 2.97 V VrefADC - voltomierz
     data->Rs = ((5.0f - data->voltage) / data->voltage) * 10.0f;  // R_load = 10 kΩ - zmierzone omomierzem, 5V - Vcc
-    data->gci = 116.602f * powf((data->Rs / R0), -2.769f);
+    data->ppm = 116.602f * powf((data->Rs / R0), -2.769f);
 
     // ograniczenie GCI do 20000
-    if (data->gci > 20000) data->gci = 20000;
+    if (data->ppm > 20000) data->ppm = 20000;
 
     // klasyfikacja jakosci powietrza
-    if (data->gci < 700) data->air_quality_level = 0;       // :D Great
-    else if (data->gci < 2000) data->air_quality_level = 1;  // :) Good
-    else if (data->gci < 5000) data->air_quality_level = 2; // :|	Poor
+    if (data->ppm < 700) data->air_quality_level = 0;       // :D Great
+    else if (data->ppm < 2000) data->air_quality_level = 1;  // :) Good
+    else if (data->ppm < 5000) data->air_quality_level = 2; // :|	Poor
     else data->air_quality_level = 3;                       // :(	Bad
 /*
  * KLASYFIKACJA
@@ -164,7 +168,7 @@ void I2C_Scan() {
 }
 
 void lcd_printf(const char *fmt, ...) {
-    char buffer[64]; // zwiększ jeśli masz długie stringi
+    char buffer[64]; // zwiększ jeśli masz długie ciągi znakow
     va_list args;
     va_start(args, fmt);
     vsnprintf(buffer, sizeof(buffer), fmt, args);
@@ -219,22 +223,21 @@ int main(void)
 //  float V0 = (Read_MQ135() * 2.97f) / 4095.0f; //2.97 V VrefADC - voltomierz
 //  float R0 = ((5.0 - V0) / V0) * 10.0;  // Zakładając R_load = 10 kΩ - kalibracja R0, Vcc = 5V
 //  printf("R0 = %.2f, V0 = %.2f \n", R0, V0);
-
-
+  char msg[] = "Hello from STM32!\r\n";
   /* USER CODE END 2 */
-
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+
+	  //HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+
 	  update_measurement(&data);
 	  lcd_send_cmd (0x80|0x00);
-	  lcd_printf("GCI: %.2f ", data.gci);
+	  lcd_printf("PPM: %.2f ", data.ppm);
 
 	  lcd_send_cmd(0x80 | 0x40);  // linia 2, kol
 	  lcd_printf("Air Quality: %d ", data.air_quality_level);
-
-
 
       HAL_Delay(1000);
 	  //lcd_send_string("GCI: %.2f ", data.gci);
