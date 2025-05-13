@@ -45,7 +45,7 @@ typedef struct {
     uint8_t air_quality_level;  // Poziom jakości powietrza (0-3)
 } MQ135_Data;
 
-// Struktura dla stanu systemu
+// Struktura dla stanu systemu  SoftDelay_Init;
 typedef struct {
     bool sd_card_active;    // Czy karta SD jest dostępna?
     bool bluetooth_active;  // Czy Bluetooth jest włączony?
@@ -70,6 +70,7 @@ typedef struct {
 #define R_LOAD           10.0f   // Rezystor obciążeniowy [kΩ] - niezależne od kalibracji
 #define R0               66.51f  // Obliczone R0 [kΩ]
 
+volatile bool heating_skipped = false;
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -100,6 +101,7 @@ static void MX_USART1_UART_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
 uint32_t Read_MQ135() {
     uint32_t adc_value = 0;
     HAL_ADC_Start(&hadc1);
@@ -124,16 +126,6 @@ void update_measurement(MQ135_Data *data) {
     else if (data->ppm < 2000) data->air_quality_level = 1;  // :) Good
     else if (data->ppm < 5000) data->air_quality_level = 2; // :|	Poor
     else data->air_quality_level = 3;                       // :(	Bad
-/*
- * KLASYFIKACJA
- * PONIATOWA:
- * u mnie w domu na Wylotowej - do 800/750 GCI - wciąż można uznać za dobrą jakość
- * na dworze na Wylotowej - 120 GCI - możliwie najczystsze powietrze
- *
- * WARSZAWA:
- * w Rivierze:
- * na dworze:
- * */
 }
 
 //void save_to_sd(AQS_Data *data) { //FATFS - jeszcze nie zaimplementowane
@@ -179,6 +171,57 @@ void lcd_printf(const char *fmt, ...) {
     lcd_send_string(buffer);
 }
 
+// funkcje do opóźnień nieblokujących
+#define SYSTICK_LOAD (SystemCoreClock/1000000U)
+#define SYSTICK_DELAY_CALIB (SYSTICK_LOAD >> 1)
+
+#define DELAY_US(us) \
+    do { \
+         uint32_t start = SysTick->VAL; \
+         uint32_t ticks = (us * SYSTICK_LOAD)-SYSTICK_DELAY_CALIB;  \
+         while((start - SysTick->VAL) < ticks); \
+    } while (0)
+
+#define DELAY_MS(ms) \
+    do { \
+        for (uint32_t i = 0; i < ms; ++i) { \
+            DELAY_US(1000); \
+        } \
+    } while (0)
+
+void run_heating_sequence(void)
+{
+    uint32_t total_seconds = 300; // 5 minut = 300 sekund
+
+    lcd_clear();
+    lcd_send_cmd(0x80);
+    lcd_send_string("Nagrzewanie...");
+    lcd_send_cmd(0xC0);
+
+    for (uint32_t remaining = total_seconds; remaining > 0; --remaining)
+    {
+        if (heating_skipped) {
+            lcd_clear();
+            lcd_send_string("Pominieto...");
+            DELAY_MS(1000);
+            break;
+        }
+
+        uint32_t min = remaining / 60;
+        uint32_t sec = remaining % 60;
+
+        char line2[16];
+        snprintf(line2, sizeof(line2), "Czas: %02lu:%02lu", min, sec);
+        lcd_send_cmd(0xC0);
+        lcd_send_string(line2);
+
+        DELAY_MS(1000);
+    }
+
+    lcd_clear();
+    lcd_send_string("Gotowe!");
+    DELAY_MS(1000);
+}
 /* USER CODE END 0 */
 
 /**
@@ -214,26 +257,27 @@ int main(void)
   MX_I2C1_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-
-  // Inicjalizacja struktury
+  // Inicjalizacja struktury MQ
   MQ135_Data data;
   // inicjalizacja ekranu
   lcd_init();
+  run_heating_sequence();
 
-  lcd_send_cmd (0x80|0x00);
-  lcd_send_string("HELLO WORLD");
-
-  /* kod do kalibaracji czujnika*/
-//  float V0 = (Read_MQ135() * 2.97f) / 4095.0f; //2.97 V VrefADC - voltomierz
-//  float R0 = ((5.0 - V0) / V0) * 10.0;  // Zakładając R_load = 10 kΩ - kalibracja R0, Vcc = 5V
-//  printf("R0 = %.2f, V0 = %.2f \n", R0, V0);
   char msg[] = "Hello from STM32!\r\n";
+
+  // ustawianie HC-06
+  char *cmd = "AT\r\n";
+  HAL_UART_Transmit(&huart1, (uint8_t*)cmd, strlen(cmd), HAL_MAX_DELAY);
+  char* cmd1 = "AT+BAUD4\r\n";  // "4" oznacza 9600 bps - to jest poprawnie ustawiony baudrate, zaórwno w cube, nie działa :(
+  HAL_UART_Transmit(&huart1, (uint8_t*)cmd1, strlen(cmd1), HAL_MAX_DELAY);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+
 	  HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
 
 	  update_measurement(&data);
@@ -243,11 +287,7 @@ int main(void)
 	  lcd_send_cmd(0x80 | 0x40);  // linia 2, kol
 	  lcd_printf("Air Quality: %d ", data.air_quality_level);
 
-      HAL_Delay(1000);
-	  //lcd_send_string("GCI: %.2f ", data.gci);
-//	    printf("Napięcie: %.2f V | GCI: %.2f | Poziom: %d\r\n",
-//	           data.voltage, data.gci, data.air_quality_level);
-      //I2C_Scan();
+	  DELAY_MS(1000);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -403,7 +443,7 @@ static void MX_USART1_UART_Init(void)
 
   /* USER CODE END USART1_Init 1 */
   huart1.Instance = USART1;
-  huart1.Init.BaudRate = 9600;
+  huart1.Init.BaudRate = 4800;
   huart1.Init.WordLength = UART_WORDLENGTH_8B;
   huart1.Init.StopBits = UART_STOPBITS_1;
   huart1.Init.Parity = UART_PARITY_NONE;
@@ -442,8 +482,8 @@ static void MX_GPIO_Init(void)
 
   /*Configure GPIO pin : B_BUTTON_Pin */
   GPIO_InitStruct.Pin = B_BUTTON_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_EVT_RISING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
   HAL_GPIO_Init(B_BUTTON_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : LD4_Pin LD3_Pin LD5_Pin LD6_Pin */
@@ -453,6 +493,10 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
 
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI0_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI0_IRQn);
+
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
   /* USER CODE END MX_GPIO_Init_2 */
@@ -460,6 +504,13 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+    if (GPIO_Pin == B_BUTTON_Pin) // PA0 przerwanie
+    {
+        heating_skipped = true;
+    }
+}
 /* USER CODE END 4 */
 
 /**

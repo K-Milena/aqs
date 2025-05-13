@@ -60,8 +60,8 @@ all: main-build
 main-build: AQS.elf secondary-outputs
 
 # Tool invocations
-AQS.elf AQS.map: $(OBJS) $(USER_OBJS) /home/kuna/Desktop/proj/aqs/AQS/STM32F411VETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "AQS.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"/home/kuna/Desktop/proj/aqs/AQS/STM32F411VETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="AQS.map" -Wl,--gc-sections -static -specs=rdimon.specs -lm -u_printf_float --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+AQS.elf AQS.map: $(OBJS) $(USER_OBJS) /home/kuna/Documents/aqs/AQS/STM32F411VETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "AQS.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"/home/kuna/Documents/aqs/AQS/STM32F411VETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="AQS.map" -Wl,--gc-sections -static -specs=rdimon.specs -lm -u_printf_float --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 
