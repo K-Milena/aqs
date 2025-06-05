@@ -197,17 +197,6 @@ void run_heating_sequence(void)
     DELAY_MS(1000);
 }
 
-void myprintf(const char *fmt, ...) {
-	static char buffer[256];
-	va_list args;
-	va_start(args, fmt);
-	vsnprintf(buffer, sizeof(buffer), fmt, args);
-	va_end(args);
-
-	int len = strlen(buffer);
-	HAL_UART_Transmit(&huart1, (uint8_t*)buffer, len, -1);
-}
-
 // Inicjalizacja struktury MQ
 MQ135_Data data;
 
@@ -253,10 +242,8 @@ int main(void)
 	HAL_TIM_Base_Start_IT(&htim10);
   // inicjalizacja ekranu
   lcd_init();
-  printf("spisujeee\n");
-  // run_heating_sequence();
-
-  char msg[] = "Hello from STM32!\r\n";
+  printf("SD card demo debugging \r\n\r\n");
+  run_heating_sequence();
 
   HAL_Delay(1000); //a short delay is important to let the SD card settle
 
@@ -266,11 +253,15 @@ int main(void)
    FRESULT fres; //Result after operations
 
    //Open the file system
-   fres = f_mount(&FatFs, "", 1); //1=mount now
+   printf("disk_status: %d\r\n", disk_status(0));
+   fres = f_mount(&FatFs, "", 0); //1=mount now przy 1 się wywala (3), a przy 0 leci dalej
+   DELAY_MS(1000);
+
    if (fres != FR_OK) {
  	printf("f_mount error (%i)\r\n", fres);
  	while(1);
    }
+   printf("disk_status: %d\r\n", disk_status(0));
 
    //Let's get some statistics from the SD card
    DWORD free_clusters, free_sectors, total_sectors;
@@ -279,7 +270,7 @@ int main(void)
 
    fres = f_getfree("", &free_clusters, &getFreeFs);
    if (fres != FR_OK) {
- 	printf("f_getfree error (%i)\r\n", fres);
+ 	printf("f_getfree error (%i)\r\n", fres);	// teraz tu się wywala (3)
  	while(1);
    }
 
@@ -340,11 +331,7 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  while (1)
-  {
-
-	  HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
-
+  while (1) {
 	  update_measurement(&data);
 	  lcd_send_cmd (0x80|0x00);
 	  lcd_printf("PPM: %.2f ", data.ppm);
@@ -383,8 +370,8 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
   RCC_OscInitStruct.PLL.PLLM = 8;
-  RCC_OscInitStruct.PLL.PLLN = 192;
-  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV4;
+  RCC_OscInitStruct.PLL.PLLN = 96;
+  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
   RCC_OscInitStruct.PLL.PLLQ = 8;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
@@ -397,7 +384,7 @@ void SystemClock_Config(void)
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV4;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
 
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_3) != HAL_OK)

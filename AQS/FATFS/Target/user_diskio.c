@@ -6,7 +6,7 @@
   ******************************************************************************
   * @attention
   *
-  * Copyright (c) 2025 STMicroelectronics.
+  * Copyright (c) 2024 STMicroelectronics.
   * All rights reserved.
   *
   * This software is licensed under terms that can be found in the LICENSE file
@@ -42,7 +42,7 @@
 
 /* Private variables ---------------------------------------------------------*/
 /* Disk status */
-static volatile DSTATUS Stat = STA_NOINIT;
+extern volatile DSTATUS Stat;
 
 /* USER CODE END DECL */
 
@@ -96,6 +96,7 @@ DSTATUS USER_status (
 )
 {
   /* USER CODE BEGIN STATUS */
+	printf("disk_status called, pdrv=%d, Stat=%d\r\n", pdrv, Stat);
 	return USER_SPI_status(pdrv);
   /* USER CODE END STATUS */
 }
@@ -116,8 +117,7 @@ DRESULT USER_read (
 )
 {
   /* USER CODE BEGIN READ */
-	return USER_SPI_read(pdrv, buff, sector, count);
-    return RES_OK;
+	return USER_SPI_read(pdrv, buff, sector, count);return RES_OK;
   /* USER CODE END READ */
 }
 
@@ -139,7 +139,7 @@ DRESULT USER_write (
 {
   /* USER CODE BEGIN WRITE */
   /* USER CODE HERE */
-    return USER_SPI_write(pdrv, buff, sector, count);
+	return USER_SPI_write(pdrv, buff, sector, count);
   /* USER CODE END WRITE */
 }
 #endif /* _USE_WRITE == 1 */
@@ -163,4 +163,3 @@ DRESULT USER_ioctl (
   /* USER CODE END IOCTL */
 }
 #endif /* _USE_IOCTL == 1 */
-
