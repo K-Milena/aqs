@@ -45,20 +45,11 @@ typedef struct {
     uint8_t air_quality_level;  // Poziom jakości powietrza (0-3)
 } MQ135_Data;
 
-// Struktura dla stanu systemu  SoftDelay_Init;
-typedef struct {
-    bool sd_card_active;    // Czy karta SD jest dostępna?
-    bool bluetooth_active;  // Czy Bluetooth jest włączony?
-    bool buzzer_active;     // Czy buzzer jest aktywny?
-    bool battery_low;       // Czy bateria jest na niskim poziomie?
-} System_Status;
-
 // Struktura główna, agregująca wszystkie dane
 typedef struct {
-    MQ135_Data sensor;      // Dane z czujnika
-    System_Status status;   // Status systemu
-    char timestamp[20];     // Znacznik czasu (np. "2024-05-20 14:30:00")
     uint32_t measurement_id; // Unikalny ID pomiaru
+    MQ135_Data sensor;      // Dane z czujnika
+    char timestamp[20];     // Znacznik czasu (np. "2024-05-20 14:30:00")
 } AQS_Data;
 
 /* USER CODE END PTD */
@@ -83,6 +74,8 @@ ADC_HandleTypeDef hadc1;
 
 I2C_HandleTypeDef hi2c1;
 
+TIM_HandleTypeDef htim10;
+
 UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
@@ -95,6 +88,7 @@ static void MX_GPIO_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_USART1_UART_Init(void);
+static void MX_TIM10_Init(void);
 /* USER CODE BEGIN PFP */
 //extern void initialise_monitor_handles(void);
 /* USER CODE END PFP */
@@ -128,30 +122,6 @@ void update_measurement(MQ135_Data *data) {
     else data->air_quality_level = 3;                       // :(	Bad
 }
 
-//void save_to_sd(AQS_Data *data) { //FATFS - jeszcze nie zaimplementowane
-//    FIL file;
-//    f_open(&file, "data.csv", FA_WRITE | FA_OPEN_APPEND);
-//
-//    char buffer[128];
-//    snprintf(buffer, sizeof(buffer), "%s,%d,%.2f,%.2f,%d\n",
-//             data->timestamp,
-//             data->measurement_id,
-//             data->sensor.gci,
-//             data->sensor.voltage,
-//             data->sensor.air_quality_level);
-//
-//    f_puts(buffer, &file);
-//    f_close(&file);
-//}
-
-//void send_via_bluetooth(AQS_Data *data) { //jeszcze nie zaimplementowane
-//    char msg[64];
-//    snprintf(msg, sizeof(msg), "GCI:%.2f|CO2:%d|AQ:%d\n",
-//             data->sensor.gci,
-//             data->sensor.co2_ppm,
-//             data->sensor.air_quality_level);
-//    HC05_Send(msg);
-//}
 
 void I2C_Scan() {
     printf("Scanning I2C bus...\r\n");
@@ -222,6 +192,10 @@ void run_heating_sequence(void)
     lcd_send_string("Gotowe!");
     DELAY_MS(1000);
 }
+
+// Inicjalizacja struktury MQ
+MQ135_Data data;
+
 /* USER CODE END 0 */
 
 /**
@@ -256,20 +230,15 @@ int main(void)
   MX_ADC1_Init();
   MX_I2C1_Init();
   MX_USART1_UART_Init();
+  MX_TIM10_Init();
   /* USER CODE BEGIN 2 */
-  // Inicjalizacja struktury MQ
-  MQ135_Data data;
+ // init timera do przerwań i przesyłu przez BT
+	HAL_TIM_Base_Start_IT(&htim10);
   // inicjalizacja ekranu
   lcd_init();
   run_heating_sequence();
 
   char msg[] = "Hello from STM32!\r\n";
-
-  // ustawianie HC-06
-  char *cmd = "AT\r\n";
-  HAL_UART_Transmit(&huart1, (uint8_t*)cmd, strlen(cmd), HAL_MAX_DELAY);
-  char* cmd1 = "AT+BAUD4\r\n";  // "4" oznacza 9600 bps - to jest poprawnie ustawiony baudrate, zaórwno w cube, nie działa :(
-  HAL_UART_Transmit(&huart1, (uint8_t*)cmd1, strlen(cmd1), HAL_MAX_DELAY);
 
   /* USER CODE END 2 */
 
@@ -428,6 +397,37 @@ static void MX_I2C1_Init(void)
 }
 
 /**
+  * @brief TIM10 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM10_Init(void)
+{
+
+  /* USER CODE BEGIN TIM10_Init 0 */
+
+  /* USER CODE END TIM10_Init 0 */
+
+  /* USER CODE BEGIN TIM10_Init 1 */
+
+  /* USER CODE END TIM10_Init 1 */
+  htim10.Instance = TIM10;
+  htim10.Init.Prescaler = 9999;
+  htim10.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim10.Init.Period = 4999;
+  htim10.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim10.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim10) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM10_Init 2 */
+
+  /* USER CODE END TIM10_Init 2 */
+
+}
+
+/**
   * @brief USART1 Initialization Function
   * @param None
   * @retval None
@@ -443,7 +443,7 @@ static void MX_USART1_UART_Init(void)
 
   /* USER CODE END USART1_Init 1 */
   huart1.Instance = USART1;
-  huart1.Init.BaudRate = 4800;
+  huart1.Init.BaudRate = 9600;
   huart1.Init.WordLength = UART_WORDLENGTH_8B;
   huart1.Init.StopBits = UART_STOPBITS_1;
   huart1.Init.Parity = UART_PARITY_NONE;
@@ -511,6 +511,19 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
         heating_skipped = true;
     }
 }
+
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
+ uint8_t msg_data[50];
+ uint16_t size = 0; //rozmiar wiadomości
+
+size = sprintf(msg_data,"Air Quality: %d.nr ", data.air_quality_level); // Stworzenie wiadomosci
+ HAL_UART_Transmit_IT(&huart1, msg_data, size); // Rozpoczecie nadawania danych z wykorzystaniem przerwan
+ HAL_GPIO_TogglePin(LD6_GPIO_Port, LD6_Pin); // Zmiana stanu pinu na diodzie LED
+}
+
+/* USER CODE END PFP */
+
 /* USER CODE END 4 */
 
 /**
