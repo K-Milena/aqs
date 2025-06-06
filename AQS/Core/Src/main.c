@@ -2,8 +2,33 @@
 /**
   ******************************************************************************
   * @file           : main.c
-  * @brief          : Main program body
+  * @brief          : Main program body - Air Quality System
   ******************************************************************************
+  * @project Rejestrator Jakości Powietrza oparty na mikrokontrolerze STM32F411.
+  *
+  * @details Projekt będzie umożliwiał pomiar i rejestrowanie parametrów
+  * środowiskowych. System będzie wyposażony w czujnik jakości powietrza
+  * MQ-135, wyświetlacz LCD 4x20, oraz moduł komunikacyjny Bluetooth do
+  * przesyłania danych do aplikacji mobilnej. Dodatkowo dane będą mogły
+  * być zapisywane na karcie SD.
+  *
+  * @authors
+  * 		Milena Kuna		325033		milena.z.kuna@gmail.com
+  * 		Karol Franczuk	325000
+  *
+  * @todo
+  *          - [ ] Ustabilizować inicjalizację SD (problemy ze statusem STA_NOINIT)
+  *          - [ ] Ustalić, co jest nie tak z tymi modułami bluetooth
+  *          - [ ] Zapisywać dane z SD w formacie CSV lub ładnie sformatowany txt
+  *
+  * @known_issues
+  *          - f_getfree error (3): prawdopodobnie wynik błędnej inicjalizacji FATFS (STA_NOINIT) - w trakcie debugowania
+  *          - komunikacja uC - HC-06 zaburzona - sprawdzałem różne baudrate, połączenia - na prawdę już nie wiem o co chodzi...
+  *
+  * @notes
+  *          - Do poprawnej inicjalizacji SD wymagane są opóźnienia ~1 sekundy po zasileniu
+  *          - Testowane na kartach microSD 2GB, 4GB, 16GB (FAT32)
+  *
   * @attention
   *
   * Copyright (c) 2025 STMicroelectronics.
@@ -40,13 +65,13 @@
 
 // Struktura dla danych z czujnika MQ-135
 typedef struct {
-    float voltage;          // Napięcie analogowe [V]
-    float Rs;               // Rezystancja czujnika [kΩ]
-    float ppm;              // Gas Contamination Index (GCI)
+    float voltage;         		// Napięcie analogowe [V]
+    float Rs;              		// Rezystancja czujnika [kΩ]
+    float ppm;              	// Gas Contamination Index (GCI)
     uint8_t air_quality_level;  // Poziom jakości powietrza (0-3)
 } MQ135_Data;
 
-// Struktura główna, agregująca wszystkie dane
+// Struktura główna, agregująca wszystkie dane do zapisu
 typedef struct {
     uint32_t measurement_id; // Unikalny ID pomiaru
     MQ135_Data sensor;      // Dane z czujnika
@@ -82,7 +107,7 @@ TIM_HandleTypeDef htim10;
 UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
-void myprintf(const char *fmt, ...);
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -100,7 +125,7 @@ extern void initialise_monitor_handles(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-uint32_t Read_MQ135() {
+uint32_t Read_MQ135() {		// czytanie wartości ADC z czujnika MQ
     uint32_t adc_value = 0;
     HAL_ADC_Start(&hadc1);
 
@@ -111,7 +136,7 @@ uint32_t Read_MQ135() {
     return adc_value;
 }
 
-void update_measurement(MQ135_Data *data) {
+void update_measurement(MQ135_Data *data) {		// przetworzenie wyniku odczytanego z ADC
     data->voltage = (Read_MQ135() * 2.97f) / 4095.0f;	// obliczenie napięcia 2.97 V VrefADC - voltomierz
     data->Rs = ((5.0f - data->voltage) / data->voltage) * 10.0f;  // R_load = 10 kΩ - zmierzone omomierzem, 5V - Vcc
     data->ppm = 116.602f * powf((data->Rs / R0), -2.769f);
@@ -127,7 +152,7 @@ void update_measurement(MQ135_Data *data) {
 }
 
 
-void I2C_Scan() {
+void I2C_Scan() {	// funkcja do sprawdzania dostępności urządzeń na I2C
     printf("Scanning I2C bus...\r\n");
     for (uint8_t addr = 1; addr < 128; addr++) {
         if (HAL_I2C_IsDeviceReady(&hi2c1, addr << 1, 1, 10) == HAL_OK) {
@@ -136,7 +161,7 @@ void I2C_Scan() {
     }
 }
 
-void lcd_printf(const char *fmt, ...) {
+void lcd_printf(const char *fmt, ...) {		//printowanie po LCD
     char buffer[64]; // zwiększ jeśli masz długie ciągi znakow
     va_list args;
     va_start(args, fmt);
@@ -163,6 +188,7 @@ void lcd_printf(const char *fmt, ...) {
         } \
     } while (0)
 
+// sekwencja przygotowująca czujnik do pomiarów - nagrzewanie
 void run_heating_sequence(void)
 {
     uint32_t total_seconds = 300; // 5 minut = 300 sekund
@@ -238,94 +264,97 @@ int main(void)
   MX_SPI1_Init();
   MX_FATFS_Init();
   /* USER CODE BEGIN 2 */
+
  // init timera do przerwań i przesyłu przez BT
-	HAL_TIM_Base_Start_IT(&htim10);
+  HAL_TIM_Base_Start_IT(&htim10);
   // inicjalizacja ekranu
   lcd_init();
+
   printf("SD card demo debugging \r\n\r\n");
+
   run_heating_sequence();
 
-  HAL_Delay(1000); //a short delay is important to let the SD card settle
-
-   //some variables for FatFs
-   FATFS FatFs; 	//Fatfs handle
-   FIL fil; 		//File handle
-   FRESULT fres; //Result after operations
-
-   //Open the file system
-   printf("disk_status: %d\r\n", disk_status(0));
-   fres = f_mount(&FatFs, "", 0); //1=mount now przy 1 się wywala (3), a przy 0 leci dalej
-   DELAY_MS(1000);
-
-   if (fres != FR_OK) {
- 	printf("f_mount error (%i)\r\n", fres);
- 	while(1);
-   }
-   printf("disk_status: %d\r\n", disk_status(0));
-
-   //Let's get some statistics from the SD card
-   DWORD free_clusters, free_sectors, total_sectors;
-
-   FATFS* getFreeFs;
-
-   fres = f_getfree("", &free_clusters, &getFreeFs);
-   if (fres != FR_OK) {
- 	printf("f_getfree error (%i)\r\n", fres);	// teraz tu się wywala (3)
- 	while(1);
-   }
-
-   //Formula comes from ChaN's documentation
-   total_sectors = (getFreeFs->n_fatent - 2) * getFreeFs->csize;
-   free_sectors = free_clusters * getFreeFs->csize;
-
-   printf("SD card stats:\r\n%10lu KiB total drive space.\r\n%10lu KiB available.\r\n", total_sectors / 2, free_sectors / 2);
-
-   //Now let's try to open file "test.txt"
-   fres = f_open(&fil, "test.txt", FA_READ);
-   if (fres != FR_OK) {
- 	printf("f_open error (%i)\r\n", fres);
- 	while(1);
-   }
-   printf("I was able to open 'test.txt' for reading!\r\n");
-
-   //Read 30 bytes from "test.txt" on the SD card
-   BYTE readBuf[30];
-
-   //We can either use f_read OR f_gets to get data out of files
-   //f_gets is a wrapper on f_read that does some string formatting for us
-   TCHAR* rres = f_gets((TCHAR*)readBuf, 30, &fil);
-   if(rres != 0) {
- 	printf("Read string from 'test.txt' contents: %s\r\n", readBuf);
-   } else {
- 	printf("f_gets error (%i)\r\n", fres);
-   }
-
-   //Be a tidy kiwi - don't forget to close your file!
-   f_close(&fil);
-
-   //Now let's try and write a file "write.txt"
-   fres = f_open(&fil, "write.txt", FA_WRITE | FA_OPEN_ALWAYS | FA_CREATE_ALWAYS);
-   if(fres == FR_OK) {
- 	printf("I was able to open 'write.txt' for writing\r\n");
-   } else {
- 	printf("f_open error (%i)\r\n", fres);
-   }
-
-   //Copy in a string
-   strncpy((char*)readBuf, "a new file is made!", 19);
-   UINT bytesWrote;
-   fres = f_write(&fil, readBuf, 19, &bytesWrote);
-   if(fres == FR_OK) {
- 	printf("Wrote %i bytes to 'write.txt'!\r\n", bytesWrote);
-   } else {
- 	printf("f_write error (%i)\r\n", fres);
-   }
-
-   //Be a tidy kiwi - don't forget to close your file!
-   f_close(&fil);
-
-   //We're done, so de-mount the drive
-   f_mount(NULL, "", 0);
+//  HAL_Delay(1000); //a short delay is important to let the SD card settle
+//
+//   //some variables for FatFs
+//   FATFS FatFs; 	//Fatfs handle
+//   FIL fil; 		//File handle
+//   FRESULT fres; //Result after operations
+//
+//   //Open the file system
+//   printf("disk_status: %d\r\n", disk_status(0));
+//   fres = f_mount(&FatFs, "", 1); //1=mount now, 0-mount later
+//   DELAY_MS(1000);
+//
+//   if (fres != FR_OK) {
+// 	printf("f_mount error (%i)\r\n", fres);
+// 	while(1);
+//   }
+//   printf("disk_status: %d\r\n", disk_status(0));
+//
+//   //Let's get some statistics from the SD card
+//   DWORD free_clusters, free_sectors, total_sectors;
+//
+//   FATFS* getFreeFs;
+//
+//   fres = f_getfree("", &free_clusters, &getFreeFs);
+//   if (fres != FR_OK) {
+// 	printf("f_getfree error (%i)\r\n", fres);	// teraz tu się wywala (3)
+// 	while(1);
+//   }
+//
+//   //Formula comes from ChaN's documentation
+//   total_sectors = (getFreeFs->n_fatent - 2) * getFreeFs->csize;
+//   free_sectors = free_clusters * getFreeFs->csize;
+//
+//   printf("SD card stats:\r\n%10lu KiB total drive space.\r\n%10lu KiB available.\r\n", total_sectors / 2, free_sectors / 2);
+//
+//   //Now let's try to open file "test.txt"
+//   fres = f_open(&fil, "test.txt", FA_READ);
+//   if (fres != FR_OK) {
+// 	printf("f_open error (%i)\r\n", fres);
+// 	while(1);
+//   }
+//   printf("I was able to open 'test.txt' for reading!\r\n");
+//
+//   //Read 30 bytes from "test.txt" on the SD card
+//   BYTE readBuf[30];
+//
+//   //We can either use f_read OR f_gets to get data out of files
+//   //f_gets is a wrapper on f_read that does some string formatting for us
+//   TCHAR* rres = f_gets((TCHAR*)readBuf, 30, &fil);
+//   if(rres != 0) {
+// 	printf("Read string from 'test.txt' contents: %s\r\n", readBuf);
+//   } else {
+// 	printf("f_gets error (%i)\r\n", fres);
+//   }
+//
+//   //Be a tidy kiwi - don't forget to close your file!
+//   f_close(&fil);
+//
+//   //Now let's try and write a file "write.txt"
+//   fres = f_open(&fil, "write.txt", FA_WRITE | FA_OPEN_ALWAYS | FA_CREATE_ALWAYS);
+//   if(fres == FR_OK) {
+// 	printf("I was able to open 'write.txt' for writing\r\n");
+//   } else {
+// 	printf("f_open error (%i)\r\n", fres);
+//   }
+//
+//   //Copy in a string
+//   strncpy((char*)readBuf, "a new file is made!", 19);
+//   UINT bytesWrote;
+//   fres = f_write(&fil, readBuf, 19, &bytesWrote);
+//   if(fres == FR_OK) {
+// 	printf("Wrote %i bytes to 'write.txt'!\r\n", bytesWrote);
+//   } else {
+// 	printf("f_write error (%i)\r\n", fres);
+//   }
+//
+//   //Be a tidy kiwi - don't forget to close your file!
+//   f_close(&fil);
+//
+//   //We're done, so de-mount the drive
+//   f_mount(NULL, "", 0);
 
   /* USER CODE END 2 */
 
@@ -333,10 +362,10 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1) {
 	  update_measurement(&data);
-	  lcd_send_cmd (0x80|0x00);
+	  lcd_send_cmd (0x80|0x00); // linia 1, kol 1
 	  lcd_printf("PPM: %.2f ", data.ppm);
 
-	  lcd_send_cmd(0x80 | 0x40);  // linia 2, kol
+	  lcd_send_cmd(0x80 | 0x40);  // linia 2, kol 1
 	  lcd_printf("Air Quality: %d ", data.air_quality_level);
 
 	  DELAY_MS(1000);
@@ -637,7 +666,7 @@ static void MX_GPIO_Init(void)
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-    if (GPIO_Pin == B_BUTTON_Pin) // PA0 przerwanie
+    if (GPIO_Pin == B_BUTTON_Pin) // PA0 przerwanie sekwencji nagrzewania
     {
         heating_skipped = true;
     }
@@ -645,12 +674,12 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
- uint8_t msg_data[50];
- uint16_t size = 0; //rozmiar wiadomości
+	 uint8_t msg_data[50];
+	 uint16_t size = 0; //rozmiar wiadomości
 
-size = sprintf(msg_data,"Air Quality: %d.nr ", data.air_quality_level); // Stworzenie wiadomosci
- HAL_UART_Transmit_IT(&huart1, msg_data, size); // Rozpoczecie nadawania danych z wykorzystaniem przerwan
- HAL_GPIO_TogglePin(LD6_GPIO_Port, LD6_Pin); // Zmiana stanu pinu na diodzie LED
+	 size = sprintf(msg_data,"Air Quality: %d.nr ", data.air_quality_level); // Stworzenie wiadomosci
+	 HAL_UART_Transmit_IT(&huart1, msg_data, size); // Rozpoczecie nadawania danych z wykorzystaniem przerwan
+	 HAL_GPIO_TogglePin(LD6_GPIO_Port, LD6_Pin); // Zmiana stanu pinu na diodzie LED przy każdym przerwaniu
 }
 
 /* USER CODE END PFP */
