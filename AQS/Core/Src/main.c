@@ -245,7 +245,7 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
- initialise_monitor_handles();
+ // initialise_monitor_handles();
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -270,7 +270,7 @@ int main(void)
   // inicjalizacja ekranu
   lcd_init();
 
-  printf("SD card demo debugging \r\n\r\n");
+  // printf("SD card demo debugging \r\n\r\n");
 
   run_heating_sequence();
 
